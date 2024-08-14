@@ -24,7 +24,7 @@ class Bot:
             elif addr != "" and port != "":
                 self.game.connect_direct(addr, port)
             else:
-                self.game.connect_new_server()
+                self.game.connect_new_server(extra_params="-m special/combat-test.uw")
         self.game.log_info("done")
 
     def attack_nearest_enemies(self):
