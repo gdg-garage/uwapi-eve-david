@@ -70,8 +70,8 @@ class Bot:
         if not self.game.try_reconnect():
             self.game.set_start_gui(True)
             lobby = os.environ.get("UNNATURAL_CONNECT_LOBBY", "")
-            addr = os.environ.get("UNNATURAL_CONNECT_ADDR", "")
-            port = os.environ.get("UNNATURAL_CONNECT_PORT", "")
+            addr = os.environ.get("UNNATURAL_CONNECT_ADDR", "192.168.2.102")
+            port = os.environ.get("UNNATURAL_CONNECT_PORT", 27543) # change port for every game
             if lobby != "":
                 self.game.connect_lobby_id(lobby)
             elif addr != "" and port != "":
