@@ -39,6 +39,10 @@ class Bot:
         if not own_units:
             return
 
+        # Don't attack until attack group of 10 is ready
+        if len(own_units) < 10:
+            return
+
         enemy_units = [
             e
             for e in self.game.world.entities().values()
@@ -69,8 +73,12 @@ class Bot:
             if not recipes:
                 continue
             recipes = recipes["recipes"]
-            if len(recipes) > 0:
-                self.game.commands.command_set_recipe(e.Id, random.choice(recipes))
+            # Build only juggernauts
+            for recipe in recipes:
+                if self.game.prototypes.name(recipe) == "juggernaut":
+                    self.game.commands.command_set_recipe(e.Id, recipe)
+                    break
+
 
     def update_callback_closure(self):
         def update_callback(stepping):
