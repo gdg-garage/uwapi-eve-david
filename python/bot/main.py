@@ -13,7 +13,7 @@ class Bot:
 
     def start(self):
         self.game.log_info("starting")
-        self.game.set_player_name("bot-py")
+        self.game.set_player_name("eve-david")
         if not self.game.try_reconnect():
             self.game.set_start_gui(True)
             lobby = os.environ.get("UNNATURAL_CONNECT_LOBBY", "")
