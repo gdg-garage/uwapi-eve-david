@@ -2,11 +2,16 @@ import os
 import random
 import signal
 from collections import defaultdict
+from enum import Enum
 from xml.dom.minidom import Entity
 
 import uw
 from uw import Prototype
 
+class CombatMode(Enum):
+    ATTACK = 1
+    DEFEND = 2
+    AUTOMATIC = 3
 
 class Bot:
     def __init__(self):
@@ -41,6 +46,7 @@ class Bot:
             "oil": 1,
             "aether": 0,
         }
+        self.combat_mode = CombatMode.AUTOMATIC
 
         # register update callback
         self.game.add_update_callback(self.update_callback_closure())
@@ -123,8 +129,8 @@ class Bot:
         os.kill(pid, signal.SIGTERM)
         self.game.log_info("done")
 
-    def attack_nearest_enemies(self):
-        own_units = [
+    def find_own_combat_units(self) -> list:
+        return [
             e
             for e in self.game.world.entities().values()
             if e.own()
@@ -132,11 +138,29 @@ class Bot:
                and self.game.prototypes.unit(e.Proto.proto)
                and self.game.prototypes.unit(e.Proto.proto).get("dps", 0) > 0
         ]
-        if not own_units:
-            return
 
-        # Don't attack until attack group of 10 is ready
-        if len(own_units) < 10:
+    def combat(self):
+        if self.combat_mode == CombatMode.ATTACK:
+            print("attack")
+            self.attack_nearest_enemies()
+        elif self.combat_mode == CombatMode.DEFEND:
+            print("defend")
+            self.go_to_nucleus()
+        else:
+            print("automatic")
+            own_units = self.find_own_combat_units()
+            if not own_units:
+                return
+            if len(own_units) >= 10:
+                print("attack")
+                self.attack_nearest_enemies()
+            else:
+                print("defend")
+                self.go_to_nucleus()
+
+    def attack_nearest_enemies(self):
+        own_units = self.find_own_combat_units()
+        if not own_units:
             return
 
         enemy_units = [
@@ -150,16 +174,27 @@ class Bot:
         for u in own_units:
             _id = u.Id
             pos = u.Position.position
-            if len(self.game.commands.orders(_id)) == 0:
-                enemy = sorted(
-                    enemy_units,
-                    key=lambda x: self.game.map.distance_estimate(
-                        pos, x.Position.position
-                    ),
-                )[0]
-                self.game.commands.order(
-                    _id, self.game.commands.fight_to_entity(enemy.Id)
-                )
+            #if len(self.game.commands.orders(_id)) == 0:
+            enemy = sorted(
+                enemy_units,
+                key=lambda x: self.game.map.distance_estimate(
+                    pos, x.Position.position
+                ),
+            )[0]
+            self.game.commands.order(
+                _id, self.game.commands.fight_to_entity(enemy.Id)
+            )
+
+    def go_to_nucleus(self):
+        own_units = self.find_own_combat_units()
+        if not own_units:
+            return
+        for u in own_units:
+            _id = u.Id
+            #if len(self.game.commands.orders(_id)) == 0:
+            self.game.commands.order(
+                _id, self.game.commands.run_to_entity(self.main_building.Id)
+            )
 
     def assign_random_recipes(self):
         for e in self.game.world.entities().values():
@@ -368,12 +403,12 @@ class Bot:
                 print(self.resources_map)
 
             if self.step % 10 == 1:
-                self.attack_nearest_enemies()
+                self.combat()
 
             # print(self.iron_cnt)
             if self.step % 10 == 5:
-                self.execute_juggernaut_strategy()
-                # self.execute_kitsune_strategy()
+                # self.execute_juggernaut_strategy()
+                self.execute_kitsune_strategy()
 
             # self.maybe_build_iron_drill()
 
