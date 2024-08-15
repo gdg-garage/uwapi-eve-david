@@ -27,8 +27,8 @@ class Bot:
         self.unit_prototype_id_map = {}
         self.construction_prototypes = None # deprecated
         self.unit_prototypes = None # deprecated
-
         self.entities = None
+        self.last_commands = {}
 
         self.building_limits = {
             "concrete plant": 2,
@@ -52,16 +52,19 @@ class Bot:
         # register update callback
         self.game.add_update_callback(self.update_callback_closure())
 
+    def get_unit_name(self, unit) -> str:
+        u = self.game.prototypes.unit(unit.Proto.proto)
+        if u is None:
+            return ""
+        return u.get("name", "")
+
     def find_main_base(self):
         if self.main_building:
             return
         for e in self.game.world.entities().values():
             if not (e.own() and hasattr(e, "Unit")):
                 continue
-            unit = self.game.prototypes.unit(e.Proto.proto)
-            if not unit:
-                continue
-            if unit.get("name", "") == "nucleus":
+            if self.get_unit_name(e) == "nucleus":
                 self.main_building = e
 
     def init_prototypes(self):
@@ -94,13 +97,12 @@ class Bot:
         for e in self.game.world.entities().values():
             if not (hasattr(e, "Unit")) and not e.own():
                 continue
-            unit = self.game.prototypes.unit(e.Proto.proto)
-            if not unit:
+            unit_name = self.get_unit_name(e)
+            if "deposit" not in unit_name:
                 continue
-            if "deposit" not in unit.get("name", ""):
-                continue
-            name = unit.get("name", "").replace(" deposit", "")
+            name = unit_name.replace(" deposit", "")
             self.resources_map[name].append(e)
+
         if not self.main_building:
             return
         for r in self.resources_map:
@@ -117,7 +119,7 @@ class Bot:
             self.game.set_start_gui(True)
             lobby = os.environ.get("UNNATURAL_CONNECT_LOBBY", "")
             # addr = os.environ.get("UNNATURAL_CONNECT_ADDR", "192.168.2.102")
-            # port = os.environ.get("UNNATURAL_CONNECT_PORT", 27543)
+            # port = os.environ.get("UNNATURAL_CONNECT_PORT", 45528)
             addr = os.environ.get("UNNATURAL_CONNECT_ADDR", "")
             port = os.environ.get("UNNATURAL_CONNECT_PORT", "")
             if lobby != "":
@@ -137,33 +139,28 @@ class Bot:
             if e.own()
                and e.has("Unit")
                and self.game.prototypes.unit(e.Proto.proto)
+               and self.get_unit_name(e) != "nucleus"
                and self.game.prototypes.unit(e.Proto.proto).get("dps", 0) > 0
         ]
 
     def combat(self):
         if self.combat_mode == CombatMode.ATTACK:
-            print("attack")
             self.attack_nearest_enemies()
         elif self.combat_mode == CombatMode.DEFEND:
-            print("defend")
             self.go_to_nucleus()
         else:
-            print("automatic")
             own_units = self.find_own_combat_units()
             if not own_units:
                 return
             if len(own_units) >= 10:
-                print("attack")
                 self.attack_nearest_enemies()
             else:
-                print("defend")
                 self.go_to_nucleus()
 
     def attack_nearest_enemies(self):
         own_units = self.find_own_combat_units()
         if not own_units:
             return
-
         enemy_units = [
             e
             for e in self.game.world.entities().values()
@@ -171,20 +168,21 @@ class Bot:
         ]
         if not enemy_units:
             return
-
         for u in own_units:
             _id = u.Id
             pos = u.Position.position
-            #if len(self.game.commands.orders(_id)) == 0:
-            enemy = sorted(
-                enemy_units,
-                key=lambda x: self.game.map.distance_estimate(
-                    pos, x.Position.position
-                ),
-            )[0]
-            self.game.commands.order(
-                _id, self.game.commands.fight_to_entity(enemy.Id)
-            )
+            if len(self.game.commands.orders(_id)) == 0 or (_id in self.last_commands and self.last_commands[_id] == CombatMode.DEFEND):
+                enemy = sorted(
+                    enemy_units,
+                    key=lambda x: self.game.map.distance_estimate(
+                        pos, x.Position.position
+                    ),
+                )[0]
+                self.game.commands.order(
+                    _id, self.game.commands.fight_to_entity(enemy.Id)
+                )
+                print("Unit "+self.get_unit_name(u)+" is attacking")
+                self.last_commands[_id] = CombatMode.ATTACK
 
     def go_to_nucleus(self):
         own_units = self.find_own_combat_units()
@@ -192,10 +190,12 @@ class Bot:
             return
         for u in own_units:
             _id = u.Id
-            #if len(self.game.commands.orders(_id)) == 0:
-            self.game.commands.order(
-                _id, self.game.commands.run_to_entity(self.main_building.Id)
-            )
+            if len(self.game.commands.orders(_id)) == 0 or (_id in self.last_commands and self.last_commands[_id] == CombatMode.ATTACK):
+                self.game.commands.order(
+                    _id, self.game.commands.run_to_entity(self.main_building.Id)
+                )
+                print("Unit " + self.get_unit_name(u) + " is defending")
+                self.last_commands[_id] = CombatMode.DEFEND
 
     def assign_random_recipes(self):
         for e in self.game.world.entities().values():
@@ -267,8 +267,6 @@ class Bot:
         plants = self.find_own_units_and_constructions_of_name(building_name)
         if len(plants) >= self.building_limits[building_name]:
             return False
-
-        print("building concrete plant")
         return self.find_placement_and_build_construction(building_name, position)
 
     def neighbouring_deposit(self, resource: str, position: int):
@@ -313,8 +311,6 @@ class Bot:
         buildings = self.find_own_units_and_constructions_of_name(building_name)
         if len(buildings) >= self.building_limits.get(building_name, 0):
             return False
-
-        print("position", position)
         return self.find_placement_and_build_construction(building_name, position)
 
     def maybe_build_pump(self, resource_type: str):
@@ -403,15 +399,13 @@ class Bot:
 
             if self.resources_map is None:
                 self.get_closest_ores()
-                print("====== closest ores ======")
-                print(self.resources_map)
 
             if self.step % 10 == 1:
                 self.combat()
 
             # print(self.iron_cnt)
             if self.step % 10 == 5:
-                # self.execute_juggernaut_strategy()
+                #self.execute_juggernaut_strategy()
                 self.execute_kitsune_strategy()
 
             # self.maybe_build_iron_drill()
