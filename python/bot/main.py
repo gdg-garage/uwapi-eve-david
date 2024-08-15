@@ -1,5 +1,6 @@
 import os
 import random
+import signal
 from collections import defaultdict
 from xml.dom.minidom import Entity
 
@@ -22,15 +23,23 @@ class Bot:
         self.construction_prototypes = None # deprecated
         self.unit_prototypes = None # deprecated
 
-        self.iron_position = None
-        self.iron_cnt = 0
-        self.concrete_cnt = 0
         self.entities = None
 
         self.building_limits = {
-            "drill": 3,
             "concrete plant": 2,
-            "factory": 1,
+            "factory": 2,
+            "laboratory": 1,
+            "arsenal": 1,
+        }
+
+        self.drill_limits = {
+            "metal": 3,
+            "crystals": 1,
+        }
+
+        self.pump_limits = {
+            "oil": 1,
+            "aether": 0,
         }
 
         # register update callback
@@ -95,6 +104,7 @@ class Bot:
     def start(self):
         self.game.log_info("starting")
         self.game.set_player_name("eve-david")
+        pid = os.getpid()
 
         if not self.game.try_reconnect():
             self.game.set_start_gui(True)
@@ -109,6 +119,8 @@ class Bot:
                 self.game.connect_direct(addr, port)
             else:
                 self.game.connect_new_server(extra_params="-m planets/triangularprism.uw")
+
+        os.kill(pid, signal.SIGTERM)
         self.game.log_info("done")
 
     def attack_nearest_enemies(self):
@@ -197,8 +209,6 @@ class Bot:
     def find_own_units_and_constructions_of_name(self, name: str):
         constructions = self.find_own_constructions()
         units = self.find_own_units()
-        print("constr", len(constructions))
-        print("units", len(units))
         filtered_c = list(filter(lambda x: self.construction_prototype_id_map[x.Proto.proto] == name, constructions))
         filtered_u = list(filter(lambda x: self.unit_prototype_id_map[x.Proto.proto] == name, units))
         return filtered_c + filtered_u
@@ -222,32 +232,92 @@ class Bot:
         print("building concrete plant")
         return self.find_placement_and_build_construction(building_name, position)
 
-    def maybe_build_iron_drill(self):
+    def neighbouring_deposit(self, resource: str, position: int):
+        for res in self.resources_map.get(resource, []):
+            for neighbor in self.game.map.neighbors_of_position(position):
+                if res.Position.position == neighbor:
+                    return res
+
+    def find_drills_with_resource_type(self, resource_type: str) -> list[Entity]:
         drills = self.find_own_units_and_constructions_of_name("drill")
-        if len(drills) >= self.building_limits["drill"]:
+        return list(filter(lambda x: self.neighbouring_deposit(resource_type, x.Position.position), drills))
+
+    def find_pumps_with_resource_type(self, resource_type: str) -> list[Entity]:
+        drills = self.find_own_units_and_constructions_of_name("pump")
+        return list(filter(lambda x: self.neighbouring_deposit(resource_type, x.Position.position), drills))
+
+
+    def maybe_build_drill(self, resource_type: str):
+        drills = self.find_drills_with_resource_type(resource_type)
+        if len(drills) >= self.drill_limits[resource_type]:
             return False
 
         # TODO Check if we have iron insufficiency
         if self.resources_map is None:
             return
-        closest_metal_deposits : list = self.resources_map.get("metal", [])
+        closest_deposits : list = self.resources_map.get(resource_type, [])
         # TODO check if enough reinforced concrete
 
-        for d in closest_metal_deposits:
+        for d in closest_deposits:
             if self.find_placement_and_build_construction("drill", d.Position.position):
-                self.iron_cnt += 1
-                self.iron_position = d.Position.position
                 break
 
-    def juggernaut_strategy(self):
+    def maybe_set_recipe(self, building_name: str, recipe_name: str):
+        pass
+
+    def maybe_build(self, building_name: str, position: int = -1):
+        if position == -1:
+            return False
+        buildings = self.find_own_units_and_constructions_of_name(building_name)
+        if len(buildings) >= self.building_limits.get(building_name, 0):
+            return False
+
+        print("position", position)
+        return self.find_placement_and_build_construction(building_name, position)
+
+    def maybe_build_pump(self, resource_type: str):
+        pumps = self.find_pumps_with_resource_type(resource_type)
+        if len(pumps) >= self.pump_limits.get(resource_type, 0):
+            return False
+
+        closest_deposits: list = self.resources_map.get(resource_type, [])
+        for d in closest_deposits:
+            if self.find_placement_and_build_construction("pump", d.Position.position):
+                return True
+
+    def maybe_build_laboratory(self):
+        pass
+
+    def position_in_distance_from(self, from_pos: int, radius: int):
+        self.game.map.area_neighborhood(from_pos, radius)
+
+    def neighboring_position_to_building(self, building_name: str, resource_name: str = "") -> int:
+        buildings = self.find_own_units_and_constructions_of_name(building_name)
+        if resource_name != "":
+            # TODO handle pumps and drills
+            pass
+        for b in buildings:
+            return b.Position.position
+        return -1
+
+    def execute_juggernaut_strategy(self):
         # Bot assembler connected to Laboratory with shield projector
+        self.maybe_set_recipe("bot assembler", "plasma emitter")
+        self.maybe_build("bot assembler", self.neighboring_position_to_building("laboratory"))
         # Arsenal with plasma emitter
+        self.maybe_set_recipe("arsenal", "plasma emitter")
+        self.maybe_build("arsenal", )
         # Oil pump
+        self.maybe_build_pump("oil")
         # Laboratory with shield projector
+        self.maybe_set_recipe("laboratory", "shield_projector")
+        self.maybe_build("laboratory", self.neighboring_position_to_building("drill", "crystals"))
         # Crystals drill
+        self.maybe_build_drill("crystals")
         # Reinforced concrete
+        self.maybe_build_reinforced_concrete()
         # Iron drill
-        self.maybe_build_iron_drill()
+        self.maybe_build_drill("metal")
 
 
     def maybe_build_factory(self):
@@ -266,20 +336,15 @@ class Bot:
     def maybe_build_reinforced_concrete(self):
         # TODO check whether concrete is needed
         # TODO find suitable iron drill
-
-        if not self.iron_position:
+        if len(self.find_own_units_and_constructions_of_name("drill")) == 0:
             return
-        print("printing own constructions")
         construction_entities = self.find_own_constructions()
         if len(construction_entities) > 0:
             self.maybe_build_concrete_plant(construction_entities[0].Position.position)
-        # self.find_placement_and_build_construction(
-        #     "factory", self.iron_position)
-        # self.assign_recipe("kitsune")
 
-    def kitsune_strategy(self):
+    def execute_kitsune_strategy(self):
         # Iron drill
-        self.maybe_build_iron_drill()
+        self.maybe_build_drill("metal")
         # Reinforced concrete
         self.maybe_build_reinforced_concrete()
         # Factory with kitsune
@@ -295,7 +360,7 @@ class Bot:
             self.find_main_base()
             self.init_prototypes()
 
-            self.assign_random_recipes()
+            # self.assign_random_recipes()
 
             if self.resources_map is None:
                 self.get_closest_ores()
@@ -306,14 +371,14 @@ class Bot:
                 self.attack_nearest_enemies()
 
             # print(self.iron_cnt)
-            # self.juggernaut_strategy()
-
-            self.kitsune_strategy()
+            if self.step % 10 == 5:
+                self.execute_juggernaut_strategy()
+                # self.execute_kitsune_strategy()
 
             # self.maybe_build_iron_drill()
 
-            if self.step % 10 == 5:
-                self.assign_random_recipes()
+            # if self.step % 10 == 5:
+            #     self.assign_random_recipes()
 
         return update_callback
 
