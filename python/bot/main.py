@@ -35,6 +35,7 @@ class Bot:
             "factory": 2,
             "laboratory": 1,
             "arsenal": 1,
+            "bot assembler": 1,
         }
 
         self.drill_limits = {
@@ -241,6 +242,9 @@ class Bot:
                 unit_entities.append(e)
         return unit_entities
 
+    def find_own_units_with_name(self, building_name: str) -> list[Entity]:
+        return list(filter(lambda x: self.unit_prototype_id_map[x.Proto.proto] == building_name, self.find_own_units()))
+
     def find_own_units_and_constructions_of_name(self, name: str):
         constructions = self.find_own_constructions()
         units = self.find_own_units()
@@ -298,7 +302,10 @@ class Bot:
                 break
 
     def maybe_set_recipe(self, building_name: str, recipe_name: str):
+        # buildings = self.find_own_units_with_name(building_name)
+        # for b in buildings:
         pass
+
 
     def maybe_build(self, building_name: str, position: int = -1):
         if position == -1:
@@ -320,9 +327,6 @@ class Bot:
             if self.find_placement_and_build_construction("pump", d.Position.position):
                 return True
 
-    def maybe_build_laboratory(self):
-        pass
-
     def position_in_distance_from(self, from_pos: int, radius: int):
         self.game.map.area_neighborhood(from_pos, radius)
 
@@ -337,15 +341,15 @@ class Bot:
 
     def execute_juggernaut_strategy(self):
         # Bot assembler connected to Laboratory with shield projector
-        self.maybe_set_recipe("bot assembler", "plasma emitter")
+        self.assign_recipe("juggernaut")
         self.maybe_build("bot assembler", self.neighboring_position_to_building("laboratory"))
         # Arsenal with plasma emitter
-        self.maybe_set_recipe("arsenal", "plasma emitter")
-        self.maybe_build("arsenal", )
+        self.assign_recipe("plasma emitter")
+        self.maybe_build("arsenal", self.neighboring_position_to_building("drill"))
         # Oil pump
         self.maybe_build_pump("oil")
         # Laboratory with shield projector
-        self.maybe_set_recipe("laboratory", "shield_projector")
+        self.assign_recipe("shield projector")
         self.maybe_build("laboratory", self.neighboring_position_to_building("drill", "crystals"))
         # Crystals drill
         self.maybe_build_drill("crystals")
