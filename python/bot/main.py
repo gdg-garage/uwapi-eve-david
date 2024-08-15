@@ -1,6 +1,8 @@
+import json
 import os
 import random
 import signal
+import sys
 from collections import defaultdict
 from enum import Enum
 from xml.dom.minidom import Entity
@@ -9,9 +11,9 @@ import uw
 from uw import Prototype
 
 class CombatMode(Enum):
-    ATTACK = 1
-    DEFEND = 2
-    AUTOMATIC = 3
+    ATTACK = "attack"
+    DEFEND = "defend"
+    AUTOMATIC = "automatic"
 
 class Bot:
     def __init__(self):
@@ -29,25 +31,7 @@ class Bot:
         self.unit_prototypes = None # deprecated
         self.entities = None
         self.last_commands = {}
-
-        self.building_limits = {
-            "concrete plant": 2,
-            "factory": 2,
-            "laboratory": 1,
-            "arsenal": 1,
-            "bot assembler": 1,
-        }
-
-        self.drill_limits = {
-            "metal": 3,
-            "crystals": 1,
-        }
-
-        self.pump_limits = {
-            "oil": 1,
-            "aether": 0,
-        }
-        self.combat_mode = CombatMode.AUTOMATIC
+        self.config = {}
 
         # register update callback
         self.game.add_update_callback(self.update_callback_closure())
@@ -114,6 +98,7 @@ class Bot:
         self.game.log_info("starting")
         self.game.set_player_name("eve-david")
         pid = os.getpid()
+        self.load_config()
 
         if not self.game.try_reconnect():
             self.game.set_start_gui(True)
@@ -144,9 +129,9 @@ class Bot:
         ]
 
     def combat(self):
-        if self.combat_mode == CombatMode.ATTACK:
+        if self.config["combat_mode"] == str(CombatMode.ATTACK.value):
             self.attack_nearest_enemies()
-        elif self.combat_mode == CombatMode.DEFEND:
+        elif self.config["combat_mode"] == str(CombatMode.DEFEND.value):
             self.go_to_nucleus()
         else:
             own_units = self.find_own_combat_units()
@@ -171,7 +156,7 @@ class Bot:
         for u in own_units:
             _id = u.Id
             pos = u.Position.position
-            if len(self.game.commands.orders(_id)) == 0 or (_id in self.last_commands and self.last_commands[_id] == CombatMode.DEFEND):
+            if (_id in self.last_commands and self.last_commands[_id] == CombatMode.DEFEND) or len(self.game.commands.orders(_id)) == 0:
                 enemy = sorted(
                     enemy_units,
                     key=lambda x: self.game.map.distance_estimate(
@@ -190,26 +175,12 @@ class Bot:
             return
         for u in own_units:
             _id = u.Id
-            if len(self.game.commands.orders(_id)) == 0 or (_id in self.last_commands and self.last_commands[_id] == CombatMode.ATTACK):
+            if (_id in self.last_commands and self.last_commands[_id] == CombatMode.ATTACK) or len(self.game.commands.orders(_id)) == 0:
                 self.game.commands.order(
                     _id, self.game.commands.run_to_entity(self.main_building.Id)
                 )
                 print("Unit " + self.get_unit_name(u) + " is defending")
                 self.last_commands[_id] = CombatMode.DEFEND
-
-    def assign_random_recipes(self):
-        for e in self.game.world.entities().values():
-            if not (e.own() and hasattr(e, "Unit")):
-                continue
-            recipes = self.game.prototypes.unit(e.Proto.proto)
-            if not recipes:
-                continue
-            recipes = recipes["recipes"]
-            # Build only juggernauts
-            for recipe in recipes:
-                if self.game.prototypes.name(recipe) == "juggernaut":
-                    self.game.commands.command_set_recipe(e.Id, recipe)
-                    break
 
     def assign_recipe(self, recipe_name: str):
         for e in self.game.world.entities().values():
@@ -265,7 +236,7 @@ class Bot:
     def maybe_build_concrete_plant(self, position: int) -> bool:
         building_name = "concrete plant"
         plants = self.find_own_units_and_constructions_of_name(building_name)
-        if len(plants) >= self.building_limits[building_name]:
+        if len(plants) >= self.config["building_limits"][building_name]:
             return False
         return self.find_placement_and_build_construction(building_name, position)
 
@@ -286,7 +257,7 @@ class Bot:
 
     def maybe_build_drill(self, resource_type: str):
         drills = self.find_drills_with_resource_type(resource_type)
-        if len(drills) >= self.drill_limits[resource_type]:
+        if len(drills) >= self.config["drill_limits"][resource_type]:
             return False
 
         # TODO Check if we have iron insufficiency
@@ -309,13 +280,13 @@ class Bot:
         if position == -1:
             return False
         buildings = self.find_own_units_and_constructions_of_name(building_name)
-        if len(buildings) >= self.building_limits.get(building_name, 0):
+        if len(buildings) >= self.config["building_limits"].get(building_name, 0):
             return False
         return self.find_placement_and_build_construction(building_name, position)
 
     def maybe_build_pump(self, resource_type: str):
         pumps = self.find_pumps_with_resource_type(resource_type)
-        if len(pumps) >= self.pump_limits.get(resource_type, 0):
+        if len(pumps) >= self.config["pump_limits"].get(resource_type, 0):
             return False
 
         closest_deposits: list = self.resources_map.get(resource_type, [])
@@ -358,7 +329,7 @@ class Bot:
     def maybe_build_factory(self):
         building_name = "factory"
         factories = self.find_own_units_and_constructions_of_name(building_name)
-        if len(factories) >= self.building_limits.get(building_name, 0):
+        if len(factories) >= self.config["building_limits"].get(building_name, 0):
             return False
 
         drills = self.find_own_units_and_constructions_of_name("drill")
@@ -386,6 +357,15 @@ class Bot:
         self.maybe_build_factory()
         self.assign_recipe("kitsune")
 
+    def load_config(self):
+        path = sys.argv[0].replace("main.py", "config.json")
+        file = open(path, 'r')
+        new_config = json.load(file)
+        if new_config != self.config:
+            self.config = new_config
+            print("New config loaded")
+
+
     def update_callback_closure(self):
         def update_callback(stepping):
             if not stepping:
@@ -395,7 +375,8 @@ class Bot:
             self.find_main_base()
             self.init_prototypes()
 
-            # self.assign_random_recipes()
+            if self.step % 20 == 1:
+                self.load_config()
 
             if self.resources_map is None:
                 self.get_closest_ores()
@@ -409,9 +390,6 @@ class Bot:
                 self.execute_kitsune_strategy()
 
             # self.maybe_build_iron_drill()
-
-            # if self.step % 10 == 5:
-            #     self.assign_random_recipes()
 
         return update_callback
 
