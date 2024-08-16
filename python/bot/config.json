@@ -17,5 +17,6 @@
     "oil": 1,
     "aether": 0
   },
-  "combat_mode": "automatic"
+  "combat_mode": "automatic",
+  "build_mode": "juggernaut"
 }
