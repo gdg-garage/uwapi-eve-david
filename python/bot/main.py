@@ -111,7 +111,7 @@ class Bot:
             self.game.set_start_gui(True)
             lobby = os.environ.get("UNNATURAL_CONNECT_LOBBY", "")
             # addr = os.environ.get("UNNATURAL_CONNECT_ADDR", "192.168.2.102")
-            # port = os.environ.get("UNNATURAL_CONNECT_PORT", 45528)
+            # port = os.environ.get("UNNATURAL_CONNECT_PORT", 28147)
             addr = os.environ.get("UNNATURAL_CONNECT_ADDR", "")
             port = os.environ.get("UNNATURAL_CONNECT_PORT", "")
             if lobby != "":
@@ -479,6 +479,14 @@ class Bot:
             self.config = new_config
             print("New config loaded")
 
+    def destroy_constructions(self):
+        for c in self.find_own_constructions():
+            self.game.commands.command_self_destruct(c.Id)
+
+    def destroy_units_of_name(self, name: str):
+        for c in self.find_own_units_with_name(name):
+            self.game.commands.command_self_destruct(c.Id)
+
 
     def update_callback_closure(self):
         def update_callback(stepping):
@@ -506,7 +514,14 @@ class Bot:
                 # self.execute_juggernaut_strategy()
                 # self.execute_kitsune_strategy()
 
-            # self.maybe_build_iron_drill()
+            try:
+                # print("trying to destroy")
+                # self.destroy_constructions()
+                # self.destroy_units_of_name("concrete plant")
+                pass
+            except Exception as e:
+                pass
+
 
         return update_callback
 
