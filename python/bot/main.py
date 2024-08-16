@@ -500,6 +500,15 @@ class Bot:
         for c in self.find_own_units_with_name(name):
             self.game.commands.command_self_destruct(c.Id)
 
+    def destroy_construction_or_unit_with_id(self, id: int):
+        for u in self.find_own_units():
+            if id == u.Id:
+                self.game.commands.command_self_destruct(id)
+        for u in self.find_own_constructions():
+            if id == u.Id:
+                self.game.commands.command_self_destruct(id)
+
+
 
     def update_callback_closure(self):
         def update_callback(stepping):
@@ -531,6 +540,7 @@ class Bot:
                 # print("trying to destroy")
                 # self.destroy_constructions()
                 # self.destroy_units_of_name("concrete plant")
+                # self.destroy_construction_or_unit_with_id(555)
                 pass
             except Exception as e:
                 pass
