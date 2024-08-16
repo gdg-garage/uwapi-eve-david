@@ -24,11 +24,15 @@ class Bot:
         self.main_building = None
         self.resources_map = None
         self.prototypes = None
+        self.resources = None
 
         self.construction_prototype_name_map = {}
         self.unit_prototype_name_map = {}
+        self.resource_prototype_name_map = {}
         self.construction_prototype_id_map = {}
         self.unit_prototype_id_map = {}
+        self.resource_prototype_id_map = {}
+
         self.construction_prototypes = None # deprecated
         self.unit_prototypes = None # deprecated
         self.entities = None
@@ -66,6 +70,9 @@ class Bot:
             if self.game.prototypes.type(p) == Prototype.Unit:
                 self.unit_prototype_name_map[self.game.prototypes.name(p)] = p,
                 self.unit_prototype_id_map[p] = self.game.prototypes.name(p)
+            if self.game.prototypes.type(p) == Prototype.Resource:
+                self.resource_prototype_name_map[self.game.prototypes.name(p)] = p,
+                self.resource_prototype_id_map[p] = self.game.prototypes.name(p)
 
         for p in self.game.prototypes.all():
             self.prototypes.append({
@@ -118,6 +125,16 @@ class Bot:
 
         os.kill(pid, signal.SIGTERM)
         self.game.log_info("done")
+
+    def get_resources(self):
+        if self.resources:
+            return
+        self.resources = defaultdict(int)
+        for e in self.game.world.entities().values():
+            if not e.own():
+                continue
+            if e.Proto.proto in self.resource_prototype_id_map:
+                self.resources[self.resource_prototype_id_map[e.Proto.proto]] += e.Amount.amount
 
     def find_own_combat_units(self) -> list:
         return [
@@ -227,21 +244,27 @@ class Bot:
         return filtered_c + filtered_u
 
     def find_placement_and_build_construction(self, construction_name: str, position: int) -> bool:
+        if self.anything_in_construction():
+            return False
+        for c in self.construction_prototypes:
+            if c["name"] == construction_name:
+                # if self.game.map.test_construction_placement(c["id"], position):
+                self.game.commands.command_place_construction(
+                    c["id"],
+                    self.game.map.find_construction_placement(c["id"], position))
+                return True
+        return False
+
+    def build_construction(self, construction_name: str, position: int) -> bool:
+        if self.anything_in_construction():
+            return False
+
         for c in self.construction_prototypes:
             if c["name"] == construction_name:
                 if self.game.map.test_construction_placement(c["id"], position):
                     self.game.commands.command_place_construction(
-                        c["id"],
-                        self.game.map.find_construction_placement(c["id"], position))
+                        c["id"],position)
                     return True
-        return False
-
-    def build_construction(self, construction_name: str, position: int) -> bool:
-        for c in self.construction_prototypes:
-            if c["name"] == construction_name:
-                self.game.commands.command_place_construction(
-                    c["id"],position)
-                return True
         return False
 
     def maybe_build_concrete_plant(self, position: int) -> bool:
@@ -252,15 +275,19 @@ class Bot:
         return self.find_placement_and_build_construction(building_name, position)
 
     def neighbouring_deposit(self, resource: str, position: int):
+        print("resources", self.resources_map.get(resource, []))
         for res in self.resources_map.get(resource, []):
+            if position == res.Position.position:
+                return res
             for neighbor in self.game.map.neighbors_of_position(position):
                 if res.Position.position == neighbor:
-                    # print("neighbor", res)
+                    print("neighbor", res)
                     # print(json.dumps(res.__dict__))
                     return res
 
     def find_drills_with_resource_type(self, resource_type: str) -> list[Entity]:
         drills = self.find_own_units_and_constructions_of_name("drill")
+        print("drills1", drills)
         return list(filter(lambda x: self.neighbouring_deposit(resource_type, x.Position.position), drills))
 
     def find_pumps_with_resource_type(self, resource_type: str) -> list[Entity]:
@@ -270,6 +297,7 @@ class Bot:
 
     def maybe_build_drill(self, resource_type: str):
         drills = self.find_drills_with_resource_type(resource_type)
+        print("drills")
         if len(drills) >= self.config["drill_limits"][resource_type]:
             print("we have enough drills")
             return False
@@ -285,6 +313,7 @@ class Bot:
             if self.build_construction("drill", d.Position.position):
                 print("success")
                 break
+            print("not success")
 
     def maybe_set_recipe(self, building_name: str, recipe_name: str):
         # buildings = self.find_own_units_with_name(building_name)
@@ -301,6 +330,7 @@ class Bot:
         return self.find_placement_and_build_construction(building_name, position)
 
     def maybe_build_pump(self, resource_type: str):
+        # Conditions - There are already metal drills and concrete plants
         pumps = self.find_pumps_with_resource_type(resource_type)
         if len(pumps) >= self.config["pump_limits"].get(resource_type, 0):
             return False
@@ -311,42 +341,91 @@ class Bot:
                 return True
         return False
 
+    def maybe_build_oil_pump(self):
+        self.find_own_units_with_name("drill")
+        # TODO filter only metal drills
+        self.get_resources()
+        if self.resources["reinforced concrete"] < 10:
+            return False
+        return self.maybe_build_pump("oil")
+
+    def maybe_build_laboratory(self):
+        self.get_resources()
+        if self.resources["reinforced concrete"] < 10:
+            return False
+        return self.maybe_build(
+            "laboratory",
+            self.neighboring_position_to_building("drill", "crystals", True))
+
+    def maybe_build_arsenal(self):
+        self.get_resources()
+        if self.resources["reinforced concrete"] < 10:
+            return False
+        return self.maybe_build(
+            "arsenal",
+            self.neighboring_position_to_building("drill", "metal"))
+
+    def maybe_build_bot_assembler(self):
+        self.get_resources()
+        if self.resources["reinforced concrete"] < 10:
+            return False
+        return self.maybe_build("bot assembler", self.neighboring_position_to_building("laboratory"))
+
     def position_in_distance_from(self, from_pos: int, radius: int):
         self.game.map.area_neighborhood(from_pos, radius)
 
-    def neighboring_position_to_building(self, building_name: str, resource_name: str = "") -> int:
+    def find_units_or_constructions_on_position(self, position) -> list:
+        result = []
+        for n in self.game.map.neighbors_of_position(position):
+            for c in self.find_own_constructions():
+                if c.Position.position == n:
+                    result.append(c)
+            for u in self.find_own_units():
+                if u.Position.position == n:
+                    result.append(u)
+        print("neighbors len", len(result))
+        return result
+
+    def neighboring_position_to_building(self, building_name: str, resource_name: str = "", prefer_empty: bool = False) -> int:
         buildings = self.find_own_units_and_constructions_of_name(building_name)
         if resource_name != "":
             # TODO handle pumps and drills
             pass
+        if prefer_empty:
+            for b in sorted(buildings, key=lambda x: len(self.find_units_or_constructions_on_position(x.Position.position))):
+                return b.Position.position
         for b in buildings:
             return b.Position.position
         return -1
 
+    def anything_in_construction(self):
+        print("in construction", len(self.find_own_constructions()))
+        return len(self.find_own_constructions()) > 0
+
     def execute_juggernaut_strategy(self):
+        # Iron drill
+        self.maybe_build_drill("metal")
+        # Reinforced concrete
+        if self.maybe_build(
+            "concrete plant",
+            self.neighboring_position_to_building("drill", "metal")):
+            return
+        # Crystals drill
+        self.maybe_build_drill("crystals")
+        # Laboratory with shield projector
+        self.assign_recipe("shield projector")
+        if self.maybe_build_laboratory():
+            return
+        # Oil pump
+        if self.maybe_build_oil_pump():
+            return
+        # Arsenal with plasma emitter
+        self.assign_recipe("plasma emitter")
+        if self.maybe_build_arsenal():
+            return
         # Bot assembler connected to Laboratory with shield projector
         self.assign_recipe("juggernaut")
         self.maybe_build("bot assembler", self.neighboring_position_to_building("laboratory"))
-        # Arsenal with plasma emitter
-        self.assign_recipe("plasma emitter")
-        self.maybe_build(
-            "arsenal",
-            self.neighboring_position_to_building("drill", "metal"))
-        # Oil pump
-        self.maybe_build_pump("oil")
-        # Laboratory with shield projector
-        self.assign_recipe("shield projector")
-        self.maybe_build(
-            "laboratory",
-            self.neighboring_position_to_building("drill", "crystals"))
-        # Crystals drill
-        self.maybe_build_drill("crystals")
-        # Reinforced concrete
-        self.maybe_build(
-            "concrete plant",
-            self.neighboring_position_to_building("drill", "metal"))
-        # Iron drill
-        self.maybe_build_drill("metal")
 
 
     def maybe_build_factory(self):
@@ -398,6 +477,8 @@ class Bot:
             self.find_main_base()
             self.init_prototypes()
 
+            self.resources = None
+
             if self.step % 20 == 1:
                 self.load_config()
 
@@ -409,8 +490,8 @@ class Bot:
 
             # print(self.iron_cnt)
             if self.step % 10 == 5:
-                #self.execute_juggernaut_strategy()
-                self.execute_kitsune_strategy()
+                self.execute_juggernaut_strategy()
+                # self.execute_kitsune_strategy()
 
             # self.maybe_build_iron_drill()
 
