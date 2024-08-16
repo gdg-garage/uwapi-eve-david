@@ -531,10 +531,8 @@ class Bot:
                 self.combat()
 
             # print(self.iron_cnt)
-            # if self.step % 10 == 5:
-                # self.execute_eagle_strategy()
-                # self.execute_juggernaut_strategy()
-                # self.execute_kitsune_strategy()
+            if self.step % 10 == 5:
+                self.build()
 
             try:
                 # print("trying to destroy")
@@ -545,7 +543,6 @@ class Bot:
             except Exception as e:
                 pass
 
-            self.build()
 
         return update_callback
 
