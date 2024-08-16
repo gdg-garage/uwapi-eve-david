@@ -80,8 +80,6 @@ class Bot:
                 "name": self.game.prototypes.name(p),
                 "type": self.game.prototypes.type(p),
             })
-        print(self.construction_prototype_name_map)
-        print(self.unit_prototype_name_map)
         self.construction_prototypes = list(filter(lambda x: x["type"] == Prototype.Construction, self.prototypes))
         self.unit_prototypes = list(filter(lambda x: x["type"] == Prototype.Unit, self.prototypes))
 
@@ -251,7 +249,10 @@ class Bot:
                 # if self.game.map.test_construction_placement(c["id"], position):
                 self.game.commands.command_place_construction(
                     c["id"],
-                    self.game.map.find_construction_placement(c["id"], position))
+                    self.game.map.find_construction_placement(self.construction_prototype_name_map["experimental assembler"], position))
+                # self.game.commands.command_place_construction(
+                #     c["id"],
+                #     self.game.map.find_construction_placement(c["id"], position))
                 return True
         return False
 
@@ -275,19 +276,16 @@ class Bot:
         return self.find_placement_and_build_construction(building_name, position)
 
     def neighbouring_deposit(self, resource: str, position: int):
-        print("resources", self.resources_map.get(resource, []))
         for res in self.resources_map.get(resource, []):
             if position == res.Position.position:
                 return res
             for neighbor in self.game.map.neighbors_of_position(position):
                 if res.Position.position == neighbor:
-                    print("neighbor", res)
                     # print(json.dumps(res.__dict__))
                     return res
 
     def find_drills_with_resource_type(self, resource_type: str) -> list[Entity]:
         drills = self.find_own_units_and_constructions_of_name("drill")
-        print("drills1", drills)
         return list(filter(lambda x: self.neighbouring_deposit(resource_type, x.Position.position), drills))
 
     def find_pumps_with_resource_type(self, resource_type: str) -> list[Entity]:
@@ -297,9 +295,7 @@ class Bot:
 
     def maybe_build_drill(self, resource_type: str):
         drills = self.find_drills_with_resource_type(resource_type)
-        print("drills")
         if len(drills) >= self.config["drill_limits"][resource_type]:
-            print("we have enough drills")
             return False
 
         # TODO Check if we have iron insufficiency
@@ -345,30 +341,22 @@ class Bot:
         self.find_own_units_with_name("drill")
         # TODO filter only metal drills
         self.get_resources()
-        if self.resources["reinforced concrete"] < 10:
-            return False
         return self.maybe_build_pump("oil")
 
     def maybe_build_laboratory(self):
         self.get_resources()
-        if self.resources["reinforced concrete"] < 10:
-            return False
         return self.maybe_build(
             "laboratory",
             self.neighboring_position_to_building("drill", "crystals", True))
 
     def maybe_build_arsenal(self):
         self.get_resources()
-        if self.resources["reinforced concrete"] < 10:
-            return False
         return self.maybe_build(
             "arsenal",
             self.neighboring_position_to_building("drill", "metal"))
 
     def maybe_build_bot_assembler(self):
         self.get_resources()
-        if self.resources["reinforced concrete"] < 10:
-            return False
         return self.maybe_build("bot assembler", self.neighboring_position_to_building("laboratory"))
 
     def position_in_distance_from(self, from_pos: int, radius: int):
@@ -383,17 +371,24 @@ class Bot:
             for u in self.find_own_units():
                 if u.Position.position == n:
                     result.append(u)
-        print("neighbors len", len(result))
         return result
+
+    def building_on_deposit(self, building: Entity, resource_type: str) -> bool:
+        for res in self.resources_map.get(resource_type, []):
+            if res.Position.position == building.Position.position:
+                return True
+        return False
 
     def neighboring_position_to_building(self, building_name: str, resource_name: str = "", prefer_empty: bool = False) -> int:
         buildings = self.find_own_units_and_constructions_of_name(building_name)
         if resource_name != "":
             # TODO handle pumps and drills
-            pass
-        if prefer_empty:
-            for b in sorted(buildings, key=lambda x: len(self.find_units_or_constructions_on_position(x.Position.position))):
-                return b.Position.position
+            x = len(buildings)
+            buildings = list(filter(lambda x: self.building_on_deposit(x, resource_name), buildings))
+            print("filtered buildings " + str(len(buildings)) + " out of " + str(x))
+        # if prefer_empty:
+        #     for b in sorted(buildings, key=lambda x: len(self.find_units_or_constructions_on_position(x.Position.position))):
+        #         return b.Position.position
         for b in buildings:
             return b.Position.position
         return -1
