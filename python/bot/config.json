@@ -4,7 +4,10 @@
     "factory": 2,
     "laboratory": 1,
     "arsenal": 1,
-    "bot assembler": 1
+    "bot assembler": 1,
+    "forgepress": 1,
+    "smelter": 1,
+    "generator": 1
   },
   "drill_limits": {
     "metal": 3,

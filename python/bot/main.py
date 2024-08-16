@@ -355,6 +355,11 @@ class Bot:
             "arsenal",
             self.neighboring_position_to_building("drill", "metal"))
 
+    def maybe_build_smelter(self):
+        if not self.find_own_units_with_name("generator"):
+            return False
+        self.maybe_build("smelter", self.neighboring_position_to_building("drill", "metal"))
+
     def maybe_build_bot_assembler(self):
         self.get_resources()
         return self.maybe_build("bot assembler", self.neighboring_position_to_building("laboratory"))
@@ -422,6 +427,23 @@ class Bot:
         self.assign_recipe("juggernaut")
         self.maybe_build("bot assembler", self.neighboring_position_to_building("laboratory"))
 
+    def execute_eagle_strategy(self):
+        # Iron drill
+        self.maybe_build_drill("metal")
+        # Reinforced concrete
+        if self.maybe_build(
+            "concrete plant",
+            self.neighboring_position_to_building("drill", "metal")):
+            return
+        # Oil pump
+        if self.maybe_build_oil_pump():
+            return
+        self.maybe_build("forgepress", self.neighboring_position_to_building("nucleus"))
+        self.assign_recipe("armor plates")
+        self.maybe_build_smelter()
+        self.maybe_build("generator", self.neighboring_position_to_building("drill", "metal"))
+        self.maybe_build("factory", self.neighboring_position_to_building("drill", "metal"))
+        self.assign_recipe("eagle")
 
     def maybe_build_factory(self):
         building_name = "factory"
@@ -485,7 +507,8 @@ class Bot:
 
             # print(self.iron_cnt)
             if self.step % 10 == 5:
-                self.execute_juggernaut_strategy()
+                self.execute_eagle_strategy()
+                # self.execute_juggernaut_strategy()
                 # self.execute_kitsune_strategy()
 
             # self.maybe_build_iron_drill()
