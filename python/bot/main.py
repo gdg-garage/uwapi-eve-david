@@ -305,11 +305,8 @@ class Bot:
         # TODO check if enough reinforced concrete
 
         for d in closest_deposits:
-            print("trying to build " + resource_type + " drill", d)
             if self.build_construction("drill", d.Position.position):
-                print("success")
                 break
-            print("not success")
 
     def maybe_set_recipe(self, building_name: str, recipe_name: str):
         # buildings = self.find_own_units_with_name(building_name)
@@ -385,7 +382,6 @@ class Bot:
             # TODO handle pumps and drills
             x = len(buildings)
             buildings = list(filter(lambda x: self.building_on_deposit(x, resource_name), buildings))
-            print("filtered buildings " + str(len(buildings)) + " out of " + str(x))
         # if prefer_empty:
         #     for b in sorted(buildings, key=lambda x: len(self.find_units_or_constructions_on_position(x.Position.position))):
         #         return b.Position.position
@@ -394,7 +390,6 @@ class Bot:
         return -1
 
     def anything_in_construction(self):
-        print("in construction", len(self.find_own_constructions()))
         return len(self.find_own_constructions()) > 0
 
     def execute_juggernaut_strategy(self):
