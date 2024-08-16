@@ -530,6 +530,9 @@ class Bot:
             if self.step % 10 == 1:
                 self.combat()
 
+            if self.step % 10 == 5:
+                self.build()
+
             try:
                 # print("trying to destroy")
                 # self.destroy_constructions()
@@ -538,9 +541,6 @@ class Bot:
                 pass
             except Exception as e:
                 pass
-
-            if self.step % 10 == 5:
-                self.build()
 
         return update_callback
 
