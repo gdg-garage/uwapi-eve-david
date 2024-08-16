@@ -15,6 +15,11 @@ class CombatMode(Enum):
     DEFEND = "defend"
     AUTOMATIC = "automatic"
 
+class BuildMode(Enum):
+    JUGGERNAUT = "juggernaut"
+    KITSUNE = "kitsune"
+    EAGLE = "eagle"
+
 class Bot:
     def __init__(self):
         self.cwd = os.getcwd()
@@ -158,6 +163,14 @@ class Bot:
                 self.attack_nearest_enemies()
             else:
                 self.go_to_nucleus()
+
+    def build(self):
+        if self.config["build_mode"] == str(BuildMode.EAGLE.value):
+            self.execute_eagle_strategy()
+        elif self.config["build_mode"] == str(BuildMode.KITSUNE.value):
+            self.execute_kitsune_strategy()
+        else:
+            self.execute_juggernaut_strategy()
 
     def attack_nearest_enemies(self):
         own_units = self.find_own_combat_units()
@@ -502,11 +515,7 @@ class Bot:
 
             # print(self.iron_cnt)
             if self.step % 10 == 5:
-                self.execute_eagle_strategy()
-                # self.execute_juggernaut_strategy()
-                # self.execute_kitsune_strategy()
-
-            # self.maybe_build_iron_drill()
+                self.build()
 
         return update_callback
 
